@@ -1,0 +1,7 @@
+torch
+torchvision
+torchaudio
+transformers==4.57.0
+scipy
+gradio
+soprano-tts
