@@ -141,20 +141,92 @@ def tts_translate(sample_audio):
 # Gradio UI
 # -----------------------------
 
-with gr.Blocks() as demo:
-    gr.Markdown("# Submit or record your audio for faster-than-speech translation!")
+theme = gr.themes.Soft(
+    primary_hue=gr.themes.Color(
+        c50="#F5F9FF",
+        c100="#E5F2FF",
+        c200="#B8D8FF",
+        c300="#82BAFF",
+        c400="#4A9BFF",
+        c500="#0069FF",
+        c600="#0061EB",
+        c700="#0050C7",
+        c800="#003DA5",
+        c900="#031B4E",
+        c950="#021533",
+    ),
+    neutral_hue=gr.themes.Color(
+        c50="#F7FAFE",
+        c100="#EEF4FA",
+        c200="#DDE5EF",
+        c300="#C1CDD9",
+        c400="#94A3B8",
+        c500="#64748B",
+        c600="#475569",
+        c700="#334155",
+        c800="#1E293B",
+        c900="#0F172A",
+        c950="#020617",
+    ),
+    font=gr.themes.GoogleFont("Inter"),
+    font_mono=gr.themes.GoogleFont("JetBrains Mono"),
+).set(
+    body_background_fill="#F5F9FF",
+    body_text_color="#031B4E",
+    block_background_fill="#FFFFFF",
+    block_border_width="1px",
+    block_border_color="#E5F2FF",
+    block_shadow="0 1px 4px rgba(0, 105, 255, 0.10)",
+    block_title_text_color="#031B4E",
+    button_primary_background_fill="#0069FF",
+    button_primary_background_fill_hover="#0061EB",
+    button_primary_text_color="#FFFFFF",
+    button_secondary_background_fill="#E5F2FF",
+    button_secondary_background_fill_hover="#B8D8FF",
+    button_secondary_text_color="#0050C7",
+    input_background_fill="#FFFFFF",
+    input_border_color="#DDE5EF",
+)
 
-    with gr.Column():
-        inp = gr.Audio(label="Input Audio to be Translated")
+css = """
+.gradio-container { max-width: 960px !important; margin: 0 auto !important; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
+.app-header { text-align: center; margin-bottom: 0.5rem; }
+.app-header h1 { color: #FFFFFF; margin-bottom: 0.25rem; }
+.app-header p { color: #475569; font-size: 1.05rem; }
+.app-footer { text-align: center; margin-top: 1.5rem; color: #94A3B8; font-size: 0.85rem; }
+"""
 
-    with gr.Column():
-        with gr.Row():
-            out_audio = gr.Audio(label="Translated Audio")
-        with gr.Row():
-            out_text = gr.Textbox(label="Translated Text", lines=8)
+with gr.Blocks(theme=theme, css=css) as demo:
+    gr.HTML(
+        "<div class='app-header'>"
+        "<h1>Real-Time Any-To-English Speech Translator</h1>"
+        "<p>Record or upload audio in any language and get an English translation — text and speech.</p>"
+        "</div>"
+    )
 
-    btn = gr.Button("Run")
+    with gr.Row(equal_height=True):
+        with gr.Column(scale=1):
+            gr.Markdown("### Input")
+            with gr.Group():
+                inp = gr.Audio(
+                    label="Audio to Translate",
+                    sources=["microphone", "upload"],
+                )
+            btn = gr.Button("Translate", variant="primary", size="lg")
+
+        with gr.Column(scale=1):
+            gr.Markdown("### Output")
+            with gr.Group():
+                out_audio = gr.Audio(label="Translated Audio", interactive=False)
+                out_text = gr.Textbox(
+                    label="Translated Text",
+                    lines=6,
+                    interactive=False,
+                )
+
     btn.click(fn=tts_translate, inputs=inp, outputs=[out_audio, out_text])
+
+    gr.HTML("<div class='app-footer'>Powered by Whisper &middot; HunyuanMT &middot; Soprano TTS</div>")
 
 demo.launch()
 
