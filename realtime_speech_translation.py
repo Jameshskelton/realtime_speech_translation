@@ -3,6 +3,8 @@
 # -----------------------------
 
 import os
+import tempfile
+import threading
 import torch
 import numpy as np
 import gradio as gr
@@ -21,6 +23,30 @@ from pydub import AudioSegment
 
 
 # -----------------------------
+# Configuration
+# -----------------------------
+
+ASR_MODEL_ID = "openai/whisper-large-v3-turbo"
+TRANSLATION_MODEL_ID = "tencent/HY-MT1.5-1.8B"
+ASR_CHUNK_LENGTH_S = 5.0
+TRANSLATION_MAX_NEW_TOKENS = 512
+
+TARGET_LANGUAGES = [
+    "English", "French", "German", "Spanish", "Portuguese",
+    "Italian", "Chinese", "Japanese", "Korean", "Arabic",
+    "Russian", "Hindi",
+]
+
+# Maps target language display names to Whisper language codes for
+# skip-translation detection.
+LANGUAGE_CODES = {
+    "English": "en", "French": "fr", "German": "de", "Spanish": "es",
+    "Portuguese": "pt", "Italian": "it", "Chinese": "zh", "Japanese": "ja",
+    "Korean": "ko", "Arabic": "ar", "Russian": "ru", "Hindi": "hi",
+}
+
+
+# -----------------------------
 # Device and dtype configuration
 # -----------------------------
 
@@ -29,51 +55,47 @@ torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 
 
 # -----------------------------
-# Whisper ASR setup
+# Lazy model loading
 # -----------------------------
 
-model_id = "openai/whisper-large-v3-turbo"
-
-model = AutoModelForSpeechSeq2Seq.from_pretrained(
-    model_id,
-    torch_dtype=torch_dtype,
-    low_cpu_mem_usage=True,
-    use_safetensors=True,
-)
-model.to(device)
-
-processor = AutoProcessor.from_pretrained(model_id)
-
-pipe = pipeline(
-    "automatic-speech-recognition",
-    model=model,
-    tokenizer=processor.tokenizer,
-    feature_extractor=processor.feature_extractor,
-    torch_dtype=torch_dtype,
-    device=device,
-    return_timestamps=True,
-    chunk_length_s=5.0,
-)
+_models = {}
+_models_lock = threading.Lock()
 
 
-# -----------------------------
-# Translation model setup
-# -----------------------------
+def _load_models():
+    """Load all models on first call; subsequent calls are no-ops."""
+    with _models_lock:
+        if _models:
+            return
 
-model_name_or_path = "tencent/HY-MT1.5-1.8B"
+        asr_model = AutoModelForSpeechSeq2Seq.from_pretrained(
+            ASR_MODEL_ID,
+            torch_dtype=torch_dtype,
+            low_cpu_mem_usage=True,
+            use_safetensors=True,
+        )
+        asr_model.to(device)
 
-tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-model_tr = AutoModelForCausalLM.from_pretrained(
-    model_name_or_path,
-    device_map="auto",
-)
+        processor = AutoProcessor.from_pretrained(ASR_MODEL_ID)
 
+        _models["asr"] = pipeline(
+            "automatic-speech-recognition",
+            model=asr_model,
+            tokenizer=processor.tokenizer,
+            feature_extractor=processor.feature_extractor,
+            torch_dtype=torch_dtype,
+            device=device,
+            return_timestamps=True,
+            chunk_length_s=ASR_CHUNK_LENGTH_S,
+        )
 
-# -----------------------------
-# TTS setup
-# -----------------------------
+        _models["tokenizer"] = AutoTokenizer.from_pretrained(TRANSLATION_MODEL_ID)
+        _models["translation"] = AutoModelForCausalLM.from_pretrained(
+            TRANSLATION_MODEL_ID,
+            device_map="auto",
+        )
 
-model_tts = SopranoTTS()
+        _models["tts"] = SopranoTTS()
 
 
 # -----------------------------
@@ -94,47 +116,90 @@ def convert_to_mono_pydub(input_file, output_file, output_format="wav"):
 # ASR → Translation → TTS pipeline
 # -----------------------------
 
-def tts_translate(sample_audio):
-    output_filename = "out1.wav"
+def tts_translate(sample_audio, target_language="English"):
+    if sample_audio is None:
+        raise gr.Error("No audio provided. Please record or upload audio first.")
 
-    sample_rate, audio_array = sample_audio
-    write(output_filename, sample_rate, audio_array)
+    _load_models()
 
-    convert_to_mono_pydub("out1.wav", "out1.wav")
+    tmp_dir = tempfile.mkdtemp()
+    raw_path = os.path.join(tmp_dir, "raw.wav")
+    mono_path = os.path.join(tmp_dir, "mono.wav")
+    output_path = os.path.join(tmp_dir, "out.wav")
 
-    result = pipe("out1.wav")
+    try:
+        sample_rate, audio_array = sample_audio
+        write(raw_path, sample_rate, audio_array)
+        convert_to_mono_pydub(raw_path, mono_path)
+    except Exception as e:
+        raise gr.Error(f"Failed to process input audio: {e}")
 
-    messages = [
-        {
-            "role": "user",
-            "content": (
-                "Translate the following segment into English, "
-                "without additional explanation.\n\n"
-                f"{result['text']}"
-            ),
-        }
-    ]
+    try:
+        result = _models["asr"](mono_path)
+    except Exception as e:
+        raise gr.Error(f"Speech recognition failed: {e}")
 
-    tokenized_chat = tokenizer.apply_chat_template(
-        messages,
-        tokenize=True,
-        add_generation_prompt=False,
-        return_tensors="pt",
+    transcribed_text = result.get("text", "").strip()
+    if not transcribed_text:
+        raise gr.Error("Could not recognize any speech in the audio. Please try again with clearer audio.")
+
+    # Whisper may return a language code (e.g. "en", "fr") in the result.
+    # Degrade gracefully if it isn't present.
+    detected_language_code = result.get("language")
+    display_language = detected_language_code.upper() if detected_language_code else "Unknown"
+
+    target_code = LANGUAGE_CODES.get(target_language, "").lower()
+    already_in_target = bool(
+        detected_language_code
+        and target_code
+        and detected_language_code.lower() == target_code
     )
 
-    outputs = model_tr.generate(
-        tokenized_chat.to(model_tr.device),
-        max_new_tokens=2048,
-    )
+    if already_in_target:
+        translated_text = transcribed_text
+    else:
+        try:
+            messages = [
+                {
+                    "role": "user",
+                    "content": (
+                        f"Translate the following segment into {target_language}, "
+                        "without additional explanation.\n\n"
+                        f"{transcribed_text}"
+                    ),
+                }
+            ]
 
-    output_text = tokenizer.decode(outputs[0])
+            tokenized_chat = _models["tokenizer"].apply_chat_template(
+                messages,
+                tokenize=True,
+                add_generation_prompt=False,
+                return_tensors="pt",
+            )
 
-    innie = output_text.split("hy_place▁holder▁no▁8｜>")[1]
-    clean_text = innie.split("<")[0]
+            outputs = _models["translation"].generate(
+                tokenized_chat.to(_models["translation"].device),
+                max_new_tokens=TRANSLATION_MAX_NEW_TOKENS,
+            )
 
-    model_tts.infer(clean_text, "out.wav")
+            output_text = _models["tokenizer"].decode(outputs[0])
+        except Exception as e:
+            raise gr.Error(f"Translation failed: {e}")
 
-    return "out.wav", clean_text
+        parts = output_text.split("hy_place▁holder▁no▁8｜>")
+        if len(parts) < 2:
+            raise gr.Error("Translation model returned unexpected output. Please try again.")
+        translated_text = parts[1].split("<")[0].strip()
+
+        if not translated_text:
+            raise gr.Error("Translation produced empty text. Please try again with different audio.")
+
+    try:
+        _models["tts"].infer(translated_text, output_path)
+    except Exception as e:
+        raise gr.Error(f"Text-to-speech failed: {e}")
+
+    return output_path, transcribed_text, display_language, translated_text
 
 
 # -----------------------------
@@ -200,7 +265,7 @@ with gr.Blocks(theme=theme, css=css) as demo:
     gr.HTML(
         "<div class='app-header'>"
         "<h1>Real-Time Any-To-English Speech Translator</h1>"
-        "<p>Record or upload audio in any language and get an English translation — text and speech.</p>"
+        "<p>Record or upload audio in any language and get a translation — text and speech.</p>"
         "</div>"
     )
 
@@ -212,21 +277,40 @@ with gr.Blocks(theme=theme, css=css) as demo:
                     label="Audio to Translate",
                     sources=["microphone", "upload"],
                 )
+            target_lang = gr.Dropdown(
+                choices=TARGET_LANGUAGES,
+                value="English",
+                label="Target Language",
+            )
             btn = gr.Button("Translate", variant="primary", size="lg")
 
         with gr.Column(scale=1):
             gr.Markdown("### Output")
             with gr.Group():
+                out_source_lang = gr.Textbox(
+                    label="Detected Source Language",
+                    interactive=False,
+                    lines=1,
+                )
+                out_transcription = gr.Textbox(
+                    label="Original Transcription",
+                    lines=3,
+                    interactive=False,
+                )
                 out_audio = gr.Audio(label="Translated Audio", interactive=False)
                 out_text = gr.Textbox(
                     label="Translated Text",
-                    lines=6,
+                    lines=4,
                     interactive=False,
                 )
 
-    btn.click(fn=tts_translate, inputs=inp, outputs=[out_audio, out_text])
+    btn.click(
+        fn=tts_translate,
+        inputs=[inp, target_lang],
+        outputs=[out_audio, out_transcription, out_source_lang, out_text],
+        show_progress="full",
+    )
 
     gr.HTML("<div class='app-footer'>Powered by Whisper &middot; HunyuanMT &middot; Soprano TTS</div>")
 
-demo.launch()
-
+demo.launch(server_name=os.environ.get("SERVER_HOST", "127.0.0.1"))
