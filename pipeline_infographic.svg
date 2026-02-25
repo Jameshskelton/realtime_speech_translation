@@ -1,0 +1,79 @@
+<svg width="1800" height="1100" viewBox="0 0 1800 1100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1800" y2="1100" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F5F7FB"/>
+      <stop offset="1" stop-color="#EAF0F8"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#2E4E7E" flood-opacity="0.15"/>
+    </filter>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="12" refY="7" orient="auto">
+      <path d="M1 1L12 7L1 13" fill="none" stroke="#6A7280" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      .title { font: 800 48px "Inter", "Segoe UI", sans-serif; fill: #112B4E; }
+      .subtitle { font: 500 22px "Inter", "Segoe UI", sans-serif; fill: #355784; }
+      .input { font: 700 34px "Inter", "Segoe UI", sans-serif; fill: #111827; }
+      .stageH { font: 700 40px "Inter", "Segoe UI", sans-serif; fill: #09131F; }
+      .stageB { font: 500 34px "Inter", "Segoe UI", sans-serif; fill: #09131F; }
+      .summaryH { font: 700 30px "Inter", "Segoe UI", sans-serif; fill: #123966; }
+      .summaryB { font: 500 24px "Inter", "Segoe UI", sans-serif; fill: #294B75; }
+      .mono { font: 600 22px "JetBrains Mono", "Menlo", monospace; fill: #2C4C76; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1800" height="1100" fill="url(#bg)"/>
+
+  <text x="70" y="84" class="title">Real-Time Speech Translation Pipeline</text>
+  <text x="70" y="118" class="subtitle">Application flow from realtime_speech_translation.py</text>
+
+  <!-- Input -->
+  <rect x="30" y="210" width="220" height="120" fill="#ECECEC" stroke="#7A7A7A" stroke-width="2"/>
+  <text x="72" y="258" class="input">Speech</text>
+  <text x="104" y="302" class="input">file</text>
+
+  <rect x="30" y="390" width="220" height="120" fill="#ECECEC" stroke="#7A7A7A" stroke-width="2"/>
+  <text x="72" y="438" class="input">Speech</text>
+  <text x="56" y="482" class="input">recording</text>
+
+  <!-- Stage 1 -->
+  <rect x="340" y="160" width="420" height="400" rx="48" fill="#9CC48D" stroke="#6C8D60" stroke-width="3" filter="url(#shadow)"/>
+  <text x="390" y="250" class="stageH">Whisper Large v3</text>
+  <text x="390" y="320" class="stageB">Transcribe audio</text>
+  <text x="390" y="372" class="stageB">to string text</text>
+  <text x="390" y="450" class="mono">openai/whisper-large-v3-turbo</text>
+
+  <!-- Stage 2 -->
+  <rect x="860" y="160" width="420" height="400" rx="48" fill="#1AA7B3" stroke="#11737C" stroke-width="3" filter="url(#shadow)"/>
+  <text x="960" y="250" class="stageH">Hunyuan MT</text>
+  <text x="910" y="320" class="stageB">Translate text</text>
+  <text x="930" y="372" class="stageB">to English</text>
+  <text x="888" y="450" class="mono">tencent/HY-MT1.5-1.8B</text>
+
+  <!-- Stage 3 -->
+  <rect x="1380" y="160" width="340" height="400" rx="48" fill="#5E94DC" stroke="#406FA8" stroke-width="3" filter="url(#shadow)"/>
+  <text x="1420" y="250" class="stageH">Soprano 1.1 80M</text>
+  <text x="1430" y="320" class="stageB">Text-to-speech</text>
+  <text x="1450" y="372" class="stageB">synthesis</text>
+  <text x="1458" y="450" class="mono">SopranoTTS</text>
+
+  <!-- Output -->
+  <rect x="1540" y="630" width="230" height="130" fill="#ECECEC" stroke="#7A7A7A" stroke-width="2"/>
+  <text x="1564" y="682" class="input">Translated</text>
+  <text x="1612" y="728" class="input">speech</text>
+
+  <!-- Arrows (minimal and non-overlapping) -->
+  <path d="M258 270H330" stroke="#6D7480" stroke-width="3.4" fill="none" marker-end="url(#arrow)"/>
+  <path d="M258 450H330" stroke="#6D7480" stroke-width="3.4" fill="none" marker-end="url(#arrow)"/>
+  <path d="M768 360H850" stroke="#6D7480" stroke-width="3.4" fill="none" marker-end="url(#arrow)"/>
+  <path d="M1288 360H1370" stroke="#6D7480" stroke-width="3.4" fill="none" marker-end="url(#arrow)"/>
+  <path d="M1550 568V620" stroke="#6D7480" stroke-width="3.4" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- Summary -->
+  <rect x="70" y="820" width="1660" height="230" rx="20" fill="#FFFFFF" stroke="#C5D6EC" stroke-width="2"/>
+  <text x="100" y="870" class="summaryH">Written Summary</text>
+  <text x="100" y="915" class="summaryB">The application accepts either an uploaded speech file or a live speech recording and normalizes the audio for processing.</text>
+  <text x="100" y="953" class="summaryB">Whisper Large v3 transcribes the input speech into text, then Hunyuan MT translates the transcript into English.</text>
+  <text x="100" y="991" class="summaryB">Soprano 1.1 80M converts the translated text into spoken audio, producing translated speech as the final output.</text>
+  <text x="100" y="1027" class="summaryB">The UI also returns detected source language, original transcription, and translated text alongside the generated audio.</text>
+</svg>

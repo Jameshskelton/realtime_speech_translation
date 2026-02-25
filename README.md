@@ -2,6 +2,10 @@
 
 A pipeline for real-time translation of speech from any language to English using Hunyuan MT, Whisper Large v3, and Soprano 1.1 80m.
 
+## Pipeline Infographic
+
+![Real-Time Speech Translation Pipeline](pipeline_infographic.svg)
+
 ## Quickstart
 
 ```
